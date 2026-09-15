@@ -497,7 +497,6 @@ void AlertCEF(Packet *p, void *event, u_int32_t event_type, void *arg)
     char                cef_message[SYSLOG_BUF];
     CEFData			 	*data;
 	SigNode				*sn;
-	ClassType			*cn;
 
 	if ( p == NULL || event == NULL || arg == NULL )
 	{
@@ -509,7 +508,6 @@ void AlertCEF(Packet *p, void *event, u_int32_t event_type, void *arg)
 			    ntohl(((Unified2EventCommon *)event)->signature_id),
 			    ntohl(((Unified2EventCommon *)event)->signature_revision));
 
-	cn = ClassTypeLookupById(barnyard2_conf, ntohl(((Unified2EventCommon *)event)->classification_id));
 
     /* Remove this check when we support IPv6 below. */
     /* sip and dip char arrays need to change size for IPv6. */

@@ -1,3 +1,177 @@
+2026-09-15 - Barnyard 2.1.15
+  [*] Build / dependencies
+     * Dropped the hard dependency on libdaq. It is no longer packaged by
+       current distributions (it is absent from Debian 13), and barnyard2
+       never opened a DAQ module or linked against it -- only the
+       DAQ_PktHdr_t type and a handful of DLT_* values were ever used.
+       These now come from the bundled src/daq_compat.h when the system
+       headers are not present; a real libdaq is still used if found, or
+       can be pointed at with --with-daq-includes.
+
+     * configure now detects libdnet. Debian and Ubuntu ship it as
+       "dumbnet" with the header renamed, which the source already handled
+       via HAVE_DUMBNET_H -- configure simply never defined it, so the
+       build failed with a bare "dnet.h: No such file or directory".
+       Override with --with-dnet-includes.
+
+     * Replaced autoconf macros removed from current autoconf
+       (AM_CONFIG_HEADER, AC_PROG_LIBTOOL, AC_PROG_CC_STDC) so the tree
+       bootstraps with autoconf 2.72 / automake 1.17.
+
+     * Dropped the Linux-only "-I/usr/include/pcap" include hack, which has
+       not matched libpcap's layout for many years.
+
+     * Builds clean with GCC 14. Two long-standing diagnostics are errors by
+       default there: DecodePacket() had no prototype anywhere in the tree,
+       and was defined as taking "const struct DAQ_PktHdr_t *" -- using a
+       typedef name as a struct tag, which declared an unrelated incomplete
+       type and made every forwarded call mismatch.
+
+     * Added Debian packaging (debian/) and build-deb.sh, which builds
+       natively or inside a debian:13 container.
+
+  [*] Memory safety and correctness
+     * spooler. The event cache dropped its entire contents whenever the
+       purge candidate was the list head: it set event_cache to NULL instead
+       of unlinking one node. Every remaining entry was leaked and the
+       event-to-packet correlation state went with it, so alerts could reach
+       the database without their packet. events_cached was only decremented
+       by one, leaving the counter permanently above the threshold.
+
+     * spooler. The unified2 record length is taken straight off disk and was
+       used unvalidated: a truncated or corrupt spool file could drive a
+       multi-gigabyte allocation and a fatal exit. Records are now bounded by
+       UNIFIED2_MAX_RECORD_LEN, records too short for the structure being
+       cast onto them are skipped, and a packet record's packet_length must
+       fit inside the record that was actually read -- previously it was
+       passed to the decoders as caplen with no cross-check, which walked
+       them off the end of the heap buffer.
+
+     * spooler. FindNextExtension() read one byte past the terminating NUL
+       for a directory entry named exactly like the file base, and tested
+       errno after strtol() without clearing it first.
+
+     * spo_database_cache. reference_sequence values coming from the database
+       were bounds-checked with "> MAX_REF_OBJ" rather than ">=", so a value
+       of exactly MAX_REF_OBJ wrote one element past the end of a stack
+       array; one use had no bounds check at all.
+
+     * spo_database_cache. A memset cleared MAX_REF_OBJ *bytes* of an array of
+       MAX_REF_OBJ *u_int32_t*, leaving three quarters of the "already seen"
+       flags stale between signatures, which silently skipped sig_reference
+       rows.
+
+     * spo_database. snort_escape_string_STATIC() returned early for strings
+       of length 1 instead of length 0, so a single-character string was
+       passed through unescaped -- reachable from packet payload when the
+       database output is configured with "encoding ascii" and "detail full".
+
+     * util. Move() shelled out to system("mv <src> <dst>") with unquoted
+       paths; it now uses rename() with an explicit copy-and-unlink fallback.
+       It also logged "Failed to archive" even when the move had succeeded.
+       ArchiveFile() dereferenced the result of strrchr() without a NULL
+       check.
+
+     * util. SetUidGid() freed the username buffer and then passed it to
+       FatalError().
+
+     * spooler. ProcessBatch() never unregistered the spooler, leaving a
+       dangling pointer in the global config after it was freed.
+       ProcessContinuous() tested FindNextExtension() against -1, which it
+       never returns, so an unreadable spool directory was treated as "no new
+       data" and barnyard2 waited forever instead of reporting it.
+
+     * spo_database. ParseDatabaseArgs() read the option list with two
+       strtok() calls whose delimiters disagreed -- " =" at the top of the
+       loop, "=" at the bottom. Everything after the last key=value pair
+       arrived as one token with no value, and that NULL went straight to
+       strncasecmp(). A line ending in a space-separated option, such as
+
+           output database: log, mysql, user=x dbname=y host=z detail full
+
+       segfaulted at startup; comma-separated options silently lost dbname.
+       Only space-separated key=value pairs with nothing trailing ever worked,
+       which is what the shipped examples show, so this went unnoticed. A
+       missing value is now reported as a configuration error.
+
+     * spo_database_cache. glsl() was a bare "inline" with no static and no
+       external definition, which under C99/C11 is an inline definition only.
+       The build worked solely because -O2 inlined every call; at -O0 it failed
+       to link, so barnyard2 could not be built with debug symbols.
+
+     * util. BY2Strtoul() tested strtoul()'s result against LONG_MAX/LONG_MIN,
+       which it never returns -- overflow is ULONG_MAX -- and read errno
+       without clearing it first, so the range check was dead.
+       string_sanitize_character() used memcpy() on overlapping regions, which
+       is undefined, and placed its terminator one byte too far.
+
+     * spo_alert_fwsam. A stray semicolon made a buffer copy unconditional,
+       and two strcpy() calls copied overlapping buffers, which is undefined.
+
+     * spo_log_tcpdump, spo_alert_unixsock. Both handed a DAQ_PktHdr_t
+       straight to code expecting a struct pcap_pkthdr, relying on the two
+       layouts happening to agree. They now convert explicitly.
+
+     * spo_alert_unixsock. A socket path of exactly sizeof(sun_path) bytes was
+       copied without a terminator; over-long paths are now rejected.
+
+     * mstring. mSplit() now always returns a heap array rather than
+       sometimes returning its on-stack scratch buffer via an invariant the
+       compiler could not verify.
+
+  [*] PostgreSQL
+     * The escaping used for PostgreSQL was MySQL's. Since PostgreSQL 9.1
+       standard_conforming_strings defaults to on, so a backslash is an
+       ordinary character in a normal string literal: the \' produced by the
+       old code emitted a literal backslash and then closed the string,
+       turning any quote in the input into an injection point. PostgreSQL now
+       has its own branch using PQescapeStringConn(), which also honours the
+       connection's client encoding.
+
+     * The static escaping path did call PQescapeStringConn(), but passed the
+       destination buffer size where the function expects the length of the
+       source string, never checked that the destination could hold the
+       required 2n+1 bytes, and copied the result back into the caller's
+       buffer without checking that it fit -- able to overflow fixed-size
+       fields such as SigNode.message[SIG_MSG_LEN]. It also treated an empty
+       result as an error.
+
+     * The shared copy-back path was off by one and did not copy the
+       terminator, so an escaped string longer than the original left the
+       caller's buffer unterminated.
+
+  [*] Behaviour changes to be aware of
+     * map files. The overflow checks in the sid-msg.map / gen-msg.map parsers
+       could never fire: the destination fields are uint32_t, so the value was
+       truncated before being compared against 64-bit ULONG_MAX. Malformed map
+       files have therefore never been diagnosed. They are now parsed properly,
+       but a bad field produces a WARNING and a value of 0 rather than
+       FatalError, so that a map file which has been tolerated for years does
+       not suddenly stop barnyard2 from starting. Check your logs for
+       "WARNING: map file:" after upgrading.
+
+     * log_text. LogTcpOptions() no longer computes the text offsets it never
+       used. The 60-column wrapping that they were for is commented out
+       upstream, so TCP option output is unchanged -- it still does not wrap,
+       unlike the IP option output.
+
+  [*] Known issues, unchanged in this release
+     * Event-to-packet correlation keys on the low 16 bits of the unified2
+       event id. Two events cached in the same second whose ids differ only
+       above bit 16 will collide and attach a packet to the wrong alert. The
+       mask looks deliberate and removing it should be validated against the
+       unified2 output your sensor actually produces.
+
+     * UNIFIED2_EXTRA_DATA records are read and discarded, so extra data
+       emitted by the sensor never reaches the database.
+
+     * The MySQL escaping is still hand-rolled rather than using
+       mysql_real_escape_string(), so it is not charset-aware and is wrong if
+       the server runs with NO_BACKSLASH_ESCAPES.
+
+     * spo_alert_fwsam's duplicate-block check ignores the source port; the
+       leg that compared it is commented out upstream.
+
 2013-02-15 - Barnyard 2.1.12
   [*] Improvements
      * spo_syslog_full. Added both ascii and base64 support.

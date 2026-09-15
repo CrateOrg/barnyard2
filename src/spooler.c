@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -112,9 +113,16 @@ static int FindNextExtension(const char *dirpath, const char *filebase,
         if (strncmp(filebase, dir_entry->d_name, filebase_len) != 0)
             continue;
 
+        /* the entry must be "<filebase>.<digits>" -- without the separator,
+           skipping filebase_len + 1 bytes would run past the terminating NUL */
+        if (dir_entry->d_name[filebase_len] != '.')
+            continue;
+
         /* this is a file we may want */
-        file_timestamp = strtol(dir_entry->d_name + filebase_len + 1, &endptr, 10);
-        if ((errno == ERANGE) || (*endptr != '\0'))
+        errno = 0;
+        file_timestamp = strtoul(dir_entry->d_name + filebase_len + 1, &endptr, 10);
+        if ((errno == ERANGE) || (endptr == dir_entry->d_name + filebase_len + 1) ||
+            (*endptr != '\0'))
         {
             LogMessage("WARNING: Can't extract timestamp extension from '%s'"
                     "using base '%s'\n", dir_entry->d_name, filebase);
@@ -411,6 +419,7 @@ int ProcessBatch(const char *dirpath, const char *filename)
     }
 
     /* we've finished with the spooler so destroy and cleanup */
+    UnRegisterSpooler(spooler);
     spoolerClose(spooler);
     spooler = NULL;
 
@@ -635,11 +644,11 @@ int ProcessContinuous(const char *dirpath, const char *filebase,
             else
             {
                 ret = FindNextExtension(dirpath, filebase, timestamp, NULL);
-                if (ret == 0)
+                if (ret == SPOOLER_EXTENSION_FOUND)
                 {
                     new_file_available = 1;
                 }
-                else if (ret == -1)
+                else if (ret != SPOOLER_EXTENSION_NONE)
                 {
                     LogMessage("ERROR: Looking for next spool file!\n");
                     exit_signal = -3;
@@ -687,12 +696,25 @@ int ProcessContinuousWithWaldo(Waldo *waldo)
 
 void spoolerProcessRecord(Spooler *spooler, int fire_output)
 {
-    struct pcap_pkthdr      pkth;
+    DAQ_PktHdr_t            pkth;
     uint32_t                type;
+    uint32_t                record_length;
     EventRecordNode         *ernCache;
 
     /* convert type once */
     type = ntohl(((Unified2RecordHeader *)spooler->record.header)->type);
+    record_length = ntohl(((Unified2RecordHeader *)spooler->record.header)->length);
+
+    /* Every record below is reached through a cast onto record.data, starting
+       with the event_id/event_second pair that Unified2CacheCommon covers.  A
+       short record would make those reads run off the end of the buffer. */
+    if (record_length < sizeof(Unified2CacheCommon))
+    {
+        LogMessage("ERROR: Undersized unified2 record (type %u, %u bytes) in '%s' -- skipping\n",
+                   type, record_length, spooler->filepath);
+        pc.total_records++;
+        return;
+    }
 
     /* increment the stats */
     pc.total_records++;
@@ -730,8 +752,25 @@ void spoolerProcessRecord(Spooler *spooler, int fire_output)
         spooler->record.pkt->ip6_extensions = SnortAlloc(sizeof(IP6Option) * 1);
 
 
+        memset(&pkth, 0, sizeof(pkth));
         pkth.caplen = ntohl(((Unified2Packet *)spooler->record.data)->packet_length);
-        pkth.len = pkth.caplen;
+
+        /* packet_length is attacker-influenced data from the spool file; it
+           must stay inside the record we actually read, or the decoders will
+           walk off the end of the heap buffer. */
+        if (record_length < offsetof(Unified2Packet, packet_data) ||
+            pkth.caplen > record_length - offsetof(Unified2Packet, packet_data))
+        {
+            LogMessage("ERROR: unified2 packet record claims %u bytes of packet data "
+                       "but the record is only %u bytes in '%s' -- skipping\n",
+                       pkth.caplen, record_length, spooler->filepath);
+            free(spooler->record.pkt->ip6_extensions);
+            free(spooler->record.pkt);
+            spooler->record.pkt = NULL;
+            return;
+        }
+
+        pkth.pktlen = pkth.caplen;
         pkth.ts.tv_sec = ntohl(((Unified2Packet *)spooler->record.data)->packet_second);
         pkth.ts.tv_usec = ntohl(((Unified2Packet *)spooler->record.data)->packet_microsecond);
 
@@ -978,7 +1017,8 @@ int spoolerEventCacheClean(Spooler *spooler)
 	    /* Delete from list */
 	    if (ernCandidate == spooler->event_cache)
 	    {
-		spooler->event_cache = NULL;
+		/* unlink the head only -- the rest of the list must survive */
+		spooler->event_cache = ernCandidateNext;
 	    }
 	    else
 	    {
@@ -1080,7 +1120,7 @@ int spoolerOpenWaldo(Waldo *waldo, uint8_t mode)
     }
 
     /* check that a waldo file has been specified */
-    if ( waldo->filepath == NULL )
+    if ( waldo->filepath[0] == '\0' )
     {
         return WALDO_FILE_EEXIST;
     }

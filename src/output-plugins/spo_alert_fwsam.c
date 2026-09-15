@@ -438,6 +438,7 @@ void AlertFWsamInit(char *args)
                 while(*ap && *ap!='/' && !isspace(*ap)) ap++;
                 if(*ap!='/')
                     break;
+                BY2_FALLTHROUGH;
 
             case '/':
                 *ap++=0; /* grab the key */
@@ -617,8 +618,8 @@ int FWsamReadLine(char *buf,unsigned long bufsize,FILE *fp)
         p=buf;
         while(isspace(*p))
           p++;
-        if(p>buf);
-            strcpy(buf,p);
+        if(p>buf)
+            memmove(buf,p,strlen(p)+1);
         if(*buf)
         {
             p=buf+strlen(buf)-1;    /* remove leading and trailing spaces */
@@ -635,7 +636,7 @@ int FWsamReadLine(char *buf,unsigned long bufsize,FILE *fp)
             if(*p=='#' || *p==';')
             {
                 if(*(p-1)=='\\')
-                    strcpy(p-1,p);
+                    memmove(p-1,p,strlen(p)+1);
                 else
                     *p=0;
             }
@@ -834,7 +835,7 @@ void FWsamParseLine(FWsamOptions *optp,char *buf)
         ap++;
     }
     while((ap=strrchr(buf,' '))!=NULL)  /* remove spaces */
-        strcpy(ap,ap+1);
+        memmove(ap,ap+1,strlen(ap+1)+1);
 
     ap=buf;
     if(*ap)
@@ -970,15 +971,15 @@ void AlertFWsam(Packet *p, void *event, uint32_t event_type, void *arg)
     static unsigned long lastbdip[FWSAM_REPET_BLOCKS];
     static unsigned long lastbduration[FWSAM_REPET_BLOCKS];
     static unsigned long lastbtime[FWSAM_REPET_BLOCKS];
-    static unsigned short lastbsp[FWSAM_REPET_BLOCKS];
+    /* only read by the commented-out FWSAM_WHO_SRC leg of the dedup check */
+    static unsigned short lastbsp[FWSAM_REPET_BLOCKS] BY2_UNUSED;
     static unsigned short lastbdp[FWSAM_REPET_BLOCKS];
     static unsigned short lastbproto[FWSAM_REPET_BLOCKS];
     static unsigned short lastbpointer;
     static unsigned char lastbmode[FWSAM_REPET_BLOCKS];
     static unsigned long btime=0;
 
-    SigNode     *sn = NULL;
-    ClassType   *cn = NULL;
+    SigNode     *sn BY2_UNUSED = NULL;
 
     /*
     ** Remove Compiler warning.
@@ -1022,8 +1023,6 @@ void AlertFWsam(Packet *p, void *event, uint32_t event_type, void *arg)
                         ntohl(((Unified2EventCommon *)event)->signature_id),
 			ntohl(((Unified2EventCommon *)event)->signature_revision));
     
-    cn = ClassTypeLookupById(barnyard2_conf, ntohl(((Unified2EventCommon *)event)->classification_id));
-
     if(FWsamOptionField)            /* If using the file (field present), let's use that */
         optp=FWsamGetOption(ntohl(((Unified2EventCommon *)event)->signature_id));
 

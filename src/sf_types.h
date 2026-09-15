@@ -212,5 +212,34 @@ typedef bool _Bool;
 # define __bool_true_false_are_defined 1
 #endif
 
+
+/*
+** Marks a deliberate switch-case fall-through.  GCC 7+ and clang only
+** recognise a narrow set of comment spellings under -Wimplicit-fallthrough=3
+** (which -Wextra turns on), so state it in code instead.
+*/
+#if defined(__has_attribute)
+#  if __has_attribute(fallthrough)
+#    define BY2_FALLTHROUGH __attribute__((fallthrough))
+#  endif
+#endif
+#ifndef BY2_FALLTHROUGH
+#  if defined(__GNUC__) && (__GNUC__ >= 7)
+#    define BY2_FALLTHROUGH __attribute__((fallthrough))
+#  else
+#    define BY2_FALLTHROUGH do { } while (0)
+#  endif
+#endif
+
+/*
+** Marks a declaration that is deliberately unused in some build
+** configurations, so that -Wunused-but-set-variable stays useful elsewhere.
+*/
+#if defined(__GNUC__)
+#  define BY2_UNUSED __attribute__((unused))
+#else
+#  define BY2_UNUSED
+#endif
+
 #endif  /* __SF_TYPES_H__ */
 

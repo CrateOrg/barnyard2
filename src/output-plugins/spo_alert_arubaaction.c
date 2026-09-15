@@ -589,7 +589,7 @@ SpoAlertArubaActionData *ParseAlertArubaActionArgs(char *args)
 	}
 
 	data->secret = (char *)SnortAlloc(strlen(toks[2])+1);
-	strncpy(data->secret, toks[2], strlen(toks[2]));
+	memcpy(data->secret, toks[2], strlen(toks[2]) + 1);
 
 	/* action can be "blacklist" or "setrole:rolename", parse */
 	for (i=0; action_lookup[i].name != NULL; i++) {
@@ -618,8 +618,8 @@ SpoAlertArubaActionData *ParseAlertArubaActionArgs(char *args)
 		} 
 
 		data->role_name = (char *)SnortAlloc(strlen(action_toks[1])+1);
-		strncpy(data->role_name, action_toks[1], 
-				strlen(action_toks[1]));
+		memcpy(data->role_name, action_toks[1],
+				strlen(action_toks[1]) + 1);
 	}	
 
 	/* free toks */

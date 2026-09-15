@@ -78,7 +78,7 @@ static inline int sfip_str_to_fam(const char *str) {
 static inline sfip_t *_sfip_alloc() {
     /* Note: using calloc here instead of SnortAlloc since the dynamic libs
      * can't presently resolve SnortAlloc */
-    return (sfip_t*)calloc(sizeof(sfip_t), 1);
+    return (sfip_t*)calloc(1, sizeof(sfip_t));
 }
 
 /* Masks off 'val' bits from the IP contained within 'ip' */

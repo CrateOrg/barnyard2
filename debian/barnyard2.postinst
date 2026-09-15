@@ -1,0 +1,38 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        if ! getent group barnyard2 >/dev/null; then
+            addgroup --system barnyard2
+        fi
+
+        if ! getent passwd barnyard2 >/dev/null; then
+            adduser --system --no-create-home --ingroup barnyard2 \
+                    --home /var/lib/barnyard2 \
+                    --gecos "Barnyard2 unified2 spooler" barnyard2
+        fi
+
+        # The waldo and any archived spool files are written as this user.
+        chown barnyard2:barnyard2 /var/lib/barnyard2 /var/log/barnyard2
+        chmod 0750 /var/lib/barnyard2 /var/log/barnyard2
+
+        # barnyard2.conf carries the database password.
+        if [ -e /etc/barnyard2/barnyard2.conf ]; then
+            chown root:barnyard2 /etc/barnyard2/barnyard2.conf
+            chmod 0640 /etc/barnyard2/barnyard2.conf
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

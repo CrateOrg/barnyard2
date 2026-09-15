@@ -355,6 +355,7 @@ static SpoAlertFastData *ParseAlertFastArgs(char *args)
                 /* in this case, only 2 options allowed */
                 else i++;
                 /* fall thru so "packet" is optional ... */
+                BY2_FALLTHROUGH;
 
             case 2:
                 limit = strtol(tok, &end, 10);

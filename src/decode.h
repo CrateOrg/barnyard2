@@ -45,8 +45,12 @@
 #endif /* !IFNAMSIZ */
 #endif /* !WIN32 */
 
+#if defined(HAVE_DAQ_H) && defined(HAVE_SFBPF_DLT_H)
 #include <daq.h>
 #include <sfbpf_dlt.h>
+#else
+#include "daq_compat.h"
+#endif
 
 #include "bitop.h"
 #include "ipv6_port.h"
@@ -1848,6 +1852,7 @@ typedef struct _DecoderFlags
 /*  P R O T O T Y P E S  ******************************************************/
 
 // root decoders
+int DecodePacket(int, Packet *, const DAQ_PktHdr_t *, const uint8_t *);
 void DecodeEthPkt(Packet *, const DAQ_PktHdr_t*, const uint8_t *);
 void DecodeNullPkt(Packet *, const DAQ_PktHdr_t*, const uint8_t *);
 void DecodeRawPkt(Packet *, const DAQ_PktHdr_t*, const uint8_t *);

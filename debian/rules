@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+# barnyard2 is old C; keep the build noisy enough to be useful without
+# drowning the log in dead-store warnings from the original source.
+export DEB_CFLAGS_MAINT_APPEND = -Wall -Wno-unused-but-set-variable
+
+DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+%:
+	dh $@ --with autoreconf
+
+override_dh_autoreconf:
+	dh_autoreconf ./autogen.sh
+
+override_dh_auto_configure:
+	dh_auto_configure -- \
+		--sysconfdir=/etc/barnyard2 \
+		--with-mysql \
+		--with-mysql-includes=/usr/include/mysql \
+		--with-mysql-libraries=/usr/lib/$(DEB_HOST_MULTIARCH)
+
+# Upstream ships no test suite.
+override_dh_auto_test:
+
+override_dh_auto_install:
+	dh_auto_install
+	# The database schemas are needed to bootstrap the Snorby/BASE database.
+	install -d debian/barnyard2/usr/share/barnyard2/schemas
+	install -m 0644 schemas/create_mysql schemas/create_postgresql \
+		debian/barnyard2/usr/share/barnyard2/schemas/
+	install -D -m 0644 debian/barnyard2.default \
+		debian/barnyard2/etc/default/barnyard2
+
+override_dh_fixperms:
+	dh_fixperms
+	# barnyard2.conf holds the database password.
+	chmod 0640 debian/barnyard2/etc/barnyard2/barnyard2.conf
+
+override_dh_installsystemd:
+	dh_installsystemd --no-start

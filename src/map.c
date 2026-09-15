@@ -61,6 +61,55 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
+
+/*
+** Parse one unsigned 32-bit field out of a .map line.
+**
+** The checks these replace were written as
+**
+**     if ((t_sn.id = strtoul(idx, NULL, 10)) == ULONG_MAX) FatalError(...)
+**
+** which could never fire: the destination members are uint32_t, so the value
+** was truncated before the comparison against 64-bit ULONG_MAX.  Malformed
+** map files have therefore never been diagnosed.
+**
+** This warns and keeps the previous behaviour (a 0 value) rather than calling
+** FatalError, so that a map file which has been quietly tolerated for years
+** does not suddenly stop barnyard2 from starting.
+*/
+static uint32_t MapParseU32(const char *str, const char *field, const char *line)
+{
+    char            *endptr = NULL;
+    unsigned long   value;
+
+    if (str == NULL)
+        return 0;
+
+    errno = 0;
+    value = strtoul(str, &endptr, 10);
+
+    /* map fields routinely carry trailing whitespace around the || separators */
+    while ((endptr != str) && isspace((int)*endptr))
+        endptr++;
+
+    if ((endptr == str) || (*endptr != '\0'))
+    {
+        LogMessage("WARNING: map file: %s is not a number in line [%s] -- using 0\n",
+                   field, line);
+        return 0;
+    }
+
+    if (((value == ULONG_MAX) && (errno == ERANGE)) || (value > UINT32_MAX))
+    {
+        LogMessage("WARNING: map file: %s value [%s] does not fit in 32 bits "
+                   "in line [%s] -- using 0\n", field, str, line);
+        return 0;
+    }
+
+    return (uint32_t)value;
+}
+
 
 
 /********************* Reference Implementation *******************************/
@@ -822,13 +871,7 @@ void ParseSidMapLine(Barnyard2Config *bc, char *data)
 		{
                 case 0: /* sid */
                     t_sn.generator = 1;
-		    if( (t_sn.id = strtoul(idx, NULL, 10)) == ULONG_MAX)
-		    {
-			FatalError("[%s()], error converting integer [%s] for line [%s] \n",
-				   __FUNCTION__,
-				   strerror(errno),
-				   data);
-		    }
+		    t_sn.id = MapParseU32(idx, "sid", data);
 		    break;
 		    
                 case 1: /* msg */
@@ -852,34 +895,16 @@ void ParseSidMapLine(Barnyard2Config *bc, char *data)
 		{
 
 		case 0: /*gid */
-		    if( (t_sn.generator = strtoul(idx,NULL,10)) == ULONG_MAX)
-		    {
-                        FatalError("[%s()], error converting integer [%s] for line [%s] \n",
-                                   __FUNCTION__,
-                                   strerror(errno),
-                                   data);
-                    }
+		    t_sn.generator = MapParseU32(idx, "gid", data);
 
 		    break;
 
 		case 1: /* sid */
-		    if( (t_sn.id = strtoul(idx, NULL, 10)) == ULONG_MAX)
-		    {
-                        FatalError("[%s()], error converting integer [%s] for line [%s] \n",
-                                   __FUNCTION__,
-                                   strerror(errno),
-                                   data);
-                    }
+		    t_sn.id = MapParseU32(idx, "sid", data);
 		    break;
 
 		case 2: /* revision */
-		    if( (t_sn.rev = strtoul(idx, NULL, 10)) == ULONG_MAX)
-		    {
-                        FatalError("[%s()], error converting integer [%s] for line [%s] \n",
-                                   __FUNCTION__,
-                                   strerror(errno),
-                                   data);
-                    }
+		    t_sn.rev = MapParseU32(idx, "revision", data);
 		    break;
 		    
 		case 3: /* classification */
@@ -893,13 +918,7 @@ void ParseSidMapLine(Barnyard2Config *bc, char *data)
 
 		case 4: /* priority */
 		    
-		    if( (t_sn.priority = strtoul(idx, NULL, 10)) == ULONG_MAX)
-		    {
-                        FatalError("[%s()], error converting integer [%s] for line [%s] \n",
-                                   __FUNCTION__,
-                                   strerror(errno),
-                                   data);
-                    }
+		    t_sn.priority = MapParseU32(idx, "priority", data);
 		    break;
 
 		case 5: /* msg */
@@ -1125,23 +1144,11 @@ void ParseGenMapLine(char *data)
         switch(i)
         {
 	case 0: /* gen */
-	    if( (t_sn.generator = strtoul(idx, NULL, 10)) == ULONG_MAX)
-	    {
-		FatalError("[%s()], error converting integer [%s] for line [%s] \n",
-			   __FUNCTION__,
-			   strerror(errno),
-			   data);
-	    }
+	    t_sn.generator = MapParseU32(idx, "gid", data);
 	    break;
 	    
 	case 1: /* sid */
-	    if( (t_sn.id = strtoul(idx, NULL, 10)) == ULONG_MAX)
-	    {
-		FatalError("[%s()], error converting integer [%s] for line [%s] \n",
-			   __FUNCTION__,
-			   strerror(errno),
-			   data);
-	    }
+	    t_sn.id = MapParseU32(idx, "sid", data);
 	    break;
 	    
 	case 2: /* msg */

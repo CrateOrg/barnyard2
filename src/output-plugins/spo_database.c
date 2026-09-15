@@ -1060,6 +1060,15 @@ void ParseDatabaseArgs(DatabaseData *data)
     {
         a1 = NULL;
         a1 = strtok(NULL, ", ");
+
+        /* Every keyword below takes a value, and several of them pass a1
+           straight to strncasecmp(); a missing value used to segfault here
+           rather than being reported. */
+        if(a1 == NULL)
+        {
+            FatalError("database: option '%s' is missing its value\n", dbarg);
+        }
+
         if(!strncasecmp(dbarg,KEYWORD_HOST,strlen(KEYWORD_HOST)))
         {
             data->host = a1;
@@ -1208,7 +1217,7 @@ void ParseDatabaseArgs(DatabaseData *data)
         }
 #endif
 	
-        dbarg = strtok(NULL, "=");
+        dbarg = strtok(NULL, " =");
     }
     
     if(data->dbtype_id == DB_ODBC)
@@ -2039,7 +2048,7 @@ int dbProcessEventInformation(DatabaseData *data,Packet *p,
 			for(i=0; i < (int)(p->tcp_option_count); i++)
 			{
 
-			    if( (&p->tcp_options[i]) &&
+			    if( (p->tcp_options[i].data != NULL) &&
 				(p->tcp_options[i].len > 0))
 			    {
 				if( (SQLQueryPtr=SQL_GetNextQuery(data)) == NULL)
@@ -2240,7 +2249,7 @@ int dbProcessEventInformation(DatabaseData *data,Packet *p,
 		{
 		    for(i=0 ; i < (int)(p->ip_option_count); i++)
 		    {
-			if( (&p->ip_options[i]) &&
+			if( (p->ip_options[i].data != NULL) &&
 			    (p->ip_options[i].len > 0))
 			{
 			    if( (SQLQueryPtr=SQL_GetNextQuery(data)) == NULL)
@@ -2684,9 +2693,40 @@ char * snort_escape_string(char * from, DatabaseData * data)
 /* Historically these were together in a common "else".
  * Keeping it that way until somebody complains...
  */
-#if defined(ENABLE_MYSQL) || defined(ENABLE_POSTGRESQL)
-    if (data->dbtype_id == DB_MYSQL ||
-        data->dbtype_id == DB_POSTGRESQL)
+#ifdef ENABLE_POSTGRESQL
+    if (data->dbtype_id == DB_POSTGRESQL)
+    {
+        /*
+         * PostgreSQL must not be escaped the MySQL way.  Since PostgreSQL 9.1
+         * standard_conforming_strings defaults to on, so a backslash is an
+         * ordinary character inside a normal string literal: writing \' would
+         * emit a literal backslash and then *close* the string, which turns
+         * any quote in the input into an injection point.  Only the doubled
+         * single quote is correct, and PQescapeStringConn() also applies the
+         * connection's client encoding.
+         */
+        int    pq_error = 0;
+        size_t written;
+
+        /* PQescapeStringConn() needs 2*len+1 bytes; 'to' was sized that way. */
+        written = PQescapeStringConn(data->p_connection, to, from,
+                                     (size_t)from_length, &pq_error);
+
+        if (pq_error != 0)
+        {
+            /* The escape is unusable -- do not hand a half-escaped string to
+               the query builder. */
+            free(to_start);
+            return NULL;
+        }
+
+        to_start[written] = '\0';
+        return (char *)to_start;
+    }
+    else
+#endif
+#if defined(ENABLE_MYSQL)
+    if (data->dbtype_id == DB_MYSQL)
     {
       for(end=from+from_length; from != end; from++)
       {
@@ -2736,15 +2776,8 @@ char * snort_escape_string(char * from, DatabaseData * data)
             *to++= '"';
             break;
 	case '\032':         /* Ctrl-Z (Win32 EOF)  -->  \\Z */
-            if (data->dbtype_id == DB_MYSQL)
-            {
-		*to++= '\\';       /* This gives problems on Win32 */
-		*to++= 'Z';
-            }
-            else
-            {
-		*to++= *from;
-            }
+            *to++= '\\';         /* This gives problems on Win32 */
+            *to++= 'Z';
             break;
 	default:             /* copy character directly */
             *to++= *from;
@@ -2809,7 +2842,7 @@ u_int32_t snort_escape_string_STATIC(char *from, u_int32_t buffer_max_len ,Datab
     
     memset(data->sanitize_buffer,'\0',DATABASE_MAX_ESCAPE_STATIC_BUFFER_LEN);
     
-    if( (from_length = strlen(from)) == 1)
+    if( (from_length = strlen(from)) == 0)
     {
 	/* Nothing to escape */
 	return 0;
@@ -2940,28 +2973,43 @@ u_int32_t snort_escape_string_STATIC(char *from, u_int32_t buffer_max_len ,Datab
 	
 #ifdef ENABLE_POSTGRESQL
     case DB_POSTGRESQL:
-	
-	if( (write_len = PQescapeStringConn(data->p_connection,
-					    data->sanitize_buffer,
-					    from,
-					    buffer_max_len,&error)) == 0)
+
+	/*
+	 * PQescapeStringConn() takes the length of the *source* string, and
+	 * requires the destination to hold 2 * that length + 1 bytes.  The
+	 * previous code passed buffer_max_len (the caller's buffer size) as
+	 * the source length and never checked that the escaped result would
+	 * fit back into the caller's buffer, which could overflow fixed-size
+	 * fields such as SigNode.message[SIG_MSG_LEN].
+	 */
+	if( (((size_t)from_length * 2) + 1) > DATABASE_MAX_ESCAPE_STATIC_BUFFER_LEN)
 	{
 	    /* XXX */
 	    return 1;
 	}
-	
-	if(error != 1)
-	{
-	    memcpy(from_start,data->sanitize_buffer,write_len+1);
-	}
-	else
+
+	write_len = PQescapeStringConn(data->p_connection,
+				       data->sanitize_buffer,
+				       from,
+				       (size_t)from_length,
+				       &error);
+
+	if(error != 0)
 	{
 	    /* XXX */
 	    return 1;
 	}
-	
+
+	/* The escaped string plus its terminator must fit where it came from. */
+	if( (write_len + 1) > buffer_max_len)
+	{
+	    /* XXX */
+	    return 1;
+	}
+
+	memcpy(from_start, data->sanitize_buffer, write_len + 1);
+
 	return 0;
-	break;
 #endif /* ENABLE_POSTGRESQL*/	
     default:
 	for (end=from+from_length; from != end; from++)
@@ -2984,15 +3032,17 @@ u_int32_t snort_escape_string_STATIC(char *from, u_int32_t buffer_max_len ,Datab
     }
     
     *to='\0';
- 
-    if(strlen(to_start) > buffer_max_len)
+
+    /* Needs room for the terminator too, and the terminator has to be copied:
+       the escaped form is never shorter than the original, so stopping at
+       strlen() left the caller's buffer unterminated. */
+    if( (strlen(to_start) + 1) > buffer_max_len)
     {
 	/* XXX */
 	return 1;
     }
-    
 
-    memcpy(from_start,to_start,strlen(to_start));
+    memcpy(from_start, to_start, strlen(to_start) + 1);
     return 0;
 }
 

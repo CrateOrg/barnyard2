@@ -1,12 +1,13 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
-AC_PREREQ(2.50)
-AC_INIT([barnyard2], [1.14])
+AC_PREREQ([2.69])
+AC_INIT([barnyard2], [1.15])
 AC_CONFIG_SRCDIR([src/barnyard2.c])
-AM_CONFIG_HEADER(config.h)
-AM_INIT_AUTOMAKE
+AC_CONFIG_HEADERS([config.h])
+AM_INIT_AUTOMAKE([foreign subdir-objects])
 AC_CONFIG_MACRO_DIR([m4])
+AC_USE_SYSTEM_EXTENSIONS
 
 LT_INIT
 
@@ -23,9 +24,8 @@ ADD_WERROR="no"
 
 # Disable annoying practice of recursively re-running the autotools
 AM_MAINTAINER_MODE
-AC_PROG_CC_STDC
 AC_PROG_CC
-AC_PROG_LIBTOOL
+LT_INIT
 AC_C_BIGENDIAN
 
 #AC_CANONICAL_HOST
@@ -76,7 +76,6 @@ case "$host" in
     # libpcap doesn't even LOOK at the timeout you give it under Linux
     AC_DEFINE([PCAP_TIMEOUT_IGNORED],[1],[Define if pcap timeout is ignored])
     AC_SUBST(extra_incl)
-    extra_incl="-I/usr/include/pcap"
     ;;
   *-hpux10*|*-hpux11*)
     AC_DEFINE([HPUX],[1],[Define if HP-UX 10 or 11])
@@ -463,6 +462,49 @@ if eval "echo $host_cpu|grep -i sparc >/dev/null"; then
     else
         CFLAGS="$OLD_CFLAGS"
     fi
+fi
+
+# libdnet is included by decode.c for its protocol definitions.  Debian and
+# Ubuntu ship it as "dumbnet" to avoid a clash with the DECnet libdnet, so
+# check for both spellings.  Nothing in barnyard2 calls a dnet function, so
+# only the header is required.
+AC_ARG_WITH(dnet_includes,
+	[  --with-dnet-includes=DIR       libdnet/libdumbnet include directory],
+	[with_dnet_includes="$withval"],[with_dnet_includes="no"])
+
+if test "x$with_dnet_includes" != "xno"; then
+   CPPFLAGS="${CPPFLAGS} -I${with_dnet_includes}"
+fi
+
+AC_CHECK_HEADERS([dumbnet.h])
+if test "x$ac_cv_header_dumbnet_h" != "xyes"; then
+   AC_CHECK_HEADERS([dnet.h],,[
+      echo
+      echo "   ERROR!  libdnet header not found."
+      echo "   Install libdumbnet-dev (Debian/Ubuntu) or libdnet-devel (RPM),"
+      echo "   or use --with-dnet-includes=DIR."
+      echo
+      exit 1
+   ])
+fi
+
+# libdaq is optional.  barnyard2 never opens a DAQ module -- it only ever
+# needed the DAQ_PktHdr_t type and a handful of DLT_* values -- so when the
+# headers are absent (they are not packaged in Debian 13 and later) the
+# bundled src/daq_compat.h is used instead.
+AC_ARG_WITH(daq_includes,
+	[  --with-daq-includes=DIR        libdaq include directory (optional)],
+	[with_daq_includes="$withval"],[with_daq_includes="no"])
+
+if test "x$with_daq_includes" != "xno"; then
+   CPPFLAGS="${CPPFLAGS} -I${with_daq_includes}"
+fi
+
+AC_CHECK_HEADERS([daq.h sfbpf_dlt.h])
+if test "x$ac_cv_header_daq_h" = "xyes" -a "x$ac_cv_header_sfbpf_dlt_h" = "xyes"; then
+   AC_MSG_NOTICE([using system libdaq headers])
+else
+   AC_MSG_NOTICE([libdaq headers not found -- using bundled src/daq_compat.h])
 fi
 
 AC_ARG_ENABLE(ipv6,

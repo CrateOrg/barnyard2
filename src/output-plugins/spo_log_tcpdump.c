@@ -363,10 +363,26 @@ static INLINE size_t SizeOf (const struct pcap_pkthdr *pkth)
     return PCAP_PKT_HDR_SZ + pkth->caplen;
 }
 
+/*
+** p->pkth is a DAQ_PktHdr_t, which is not a struct pcap_pkthdr even though
+** the two happen to share a prefix on most platforms.  Convert explicitly
+** rather than relying on that coincidence.
+*/
+static INLINE void DaqHdrToPcapHdr (const DAQ_PktHdr_t *daqh, struct pcap_pkthdr *ph)
+{
+    ph->ts     = daqh->ts;
+    ph->caplen = daqh->caplen;
+    ph->len    = daqh->pktlen;
+}
+
 static void LogTcpdumpSingle(Packet *p, void *event, uint32_t event_type, void *arg)
 {
     LogTcpdumpData *data = (LogTcpdumpData *)arg;
-    size_t dumpSize = SizeOf(p->pkth);
+    struct pcap_pkthdr pcaphdr;
+    size_t dumpSize;
+
+    DaqHdrToPcapHdr(p->pkth, &pcaphdr);
+    dumpSize = SizeOf(&pcaphdr);
 
     /* roll log file packet linktype is different to the dump linktype and in automode */
 
@@ -388,7 +404,7 @@ static void LogTcpdumpSingle(Packet *p, void *event, uint32_t event_type, void *
 //    else if ( data->size + dumpSize > data->limit )
 //        TcpdumpRollLogFile(data);
 
-    pcap_dump((u_char *)data->dumpd, p->pkth, p->pkt);
+    pcap_dump((u_char *)data->dumpd, &pcaphdr, p->pkt);
     data->size += dumpSize;
 
     if (!BcLineBufferedLogging())

@@ -1,0 +1,30 @@
+Source: barnyard2
+Section: net
+Priority: optional
+Maintainer: Local Build <root@localhost>
+Build-Depends: debhelper-compat (= 13),
+               autoconf,
+               automake,
+               libtool,
+               pkgconf,
+               libpcap-dev,
+               libdumbnet-dev,
+               default-libmysqlclient-dev,
+               zlib1g-dev,
+               libssl-dev
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/firnsy/barnyard2
+
+Package: barnyard2
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser
+Recommends: default-mysql-client
+Description: Snort unified2 output spooler with database support
+ Barnyard2 reads the binary unified2 event files written by Snort and
+ forwards the events to one or more output plugins, so that the sensor
+ itself is not blocked on database or network I/O.
+ .
+ This build enables the MySQL output plugin, which is what Snorby and
+ comparable consoles read from, and works with unified2 files produced by
+ either Snort 2 or Snort 3.

@@ -81,7 +81,7 @@ static inline void PushLayer(PROTO_ID type, Packet* p, const uint8_t* hdr, uint3
     }
 }
 
-int DecodePacket(int linktype, Packet *p, const struct DAQ_PktHdr_t *pkthdr, const uint8_t *pkt)
+int DecodePacket(int linktype, Packet *p, const DAQ_PktHdr_t *pkthdr, const uint8_t *pkt)
 {
     DEBUG_WRAP(DebugMessage(DEBUG_DECODE,"Decoding linktype %d\n",linktype););
     switch(linktype)
@@ -3920,6 +3920,7 @@ void DecodeTCPOptions(const uint8_t *start, uint32_t o_len, Packet *p)
         {
         case TCPOPT_EOL:
             done = 1; /* fall through to the NOP case */
+            BY2_FALLTHROUGH;
         case TCPOPT_NOP:
             p->tcp_options[opt_count].len = 0;
             p->tcp_options[opt_count].data = NULL;

@@ -604,26 +604,17 @@ static void LogTcpOptions(TextLog*  log, Packet * p)
     int i;
     int j;
     u_char tmp[5];
-    u_long init_offset;
-    u_long print_offset;
-
-    init_offset = TextLog_Tell(log);
 
     TextLog_Print(log, "TCP Options (%d) => ", p->tcp_option_count);
 
     if(p->tcp_option_count > 40 || !p->tcp_option_count)
         return;
 
+    /* NOTE: unlike LogIpOptions() this does not wrap at 60 columns; the
+     * wrapping block was disabled upstream and its offset bookkeeping was
+     * left behind as dead stores. */
     for(i = 0; i < (int) p->tcp_option_count; i++)
     {
-        print_offset = TextLog_Tell(log);
-        /**
-        if((print_offset - init_offset) > 60)
-        {
-            TextLog_Puts(log, "\nTCP Options => ");
-            init_offset = TextLog_Tell(log);
-        }
-        **/ 
         switch(p->tcp_options[i].code)
         {
             case TCPOPT_MAXSEG:

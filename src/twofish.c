@@ -619,11 +619,13 @@ void _TwoFish_MakeSubKeys(TWOFISH *tfdata)	/* Expand a user-supplied key materia
 				b1 = (TwoFish_P[TwoFish_P_14][b1]) ^ TwoFish_b1(k3);
 				b2 = (TwoFish_P[TwoFish_P_24][b2]) ^ TwoFish_b2(k3);
 				b3 = (TwoFish_P[TwoFish_P_34][b3]) ^ TwoFish_b3(k3);
+				BY2_FALLTHROUGH;
 			case 3:  /* 192-bit keys */
 				b0 = (TwoFish_P[TwoFish_P_03][b0]) ^ TwoFish_b0(k2);
 				b1 = (TwoFish_P[TwoFish_P_13][b1]) ^ TwoFish_b1(k2);
 				b2 = (TwoFish_P[TwoFish_P_23][b2]) ^ TwoFish_b2(k2);
 				b3 = (TwoFish_P[TwoFish_P_33][b3]) ^ TwoFish_b3(k2);
+				BY2_FALLTHROUGH;
 			case 2: /* 128-bit keys */
 				tfdata->sBox[      2*i  ]=
 					TwoFish_MDS[0][(TwoFish_P[TwoFish_P_01][(TwoFish_P[TwoFish_P_02][b0]) ^
@@ -929,12 +931,14 @@ uint32_t _TwoFish_F32(uint32_t k64Cnt,uint32_t x,uint32_t *k32)
 			b1 = (TwoFish_P[TwoFish_P_14][b1] & 0xFF) ^ TwoFish_b1(k3);
 			b2 = (TwoFish_P[TwoFish_P_24][b2] & 0xFF) ^ TwoFish_b2(k3);
 			b3 = (TwoFish_P[TwoFish_P_34][b3] & 0xFF) ^ TwoFish_b3(k3);
+			BY2_FALLTHROUGH;
 
 		case 3:	/* 192-bit keys */
 			b0 = (TwoFish_P[TwoFish_P_03][b0] & 0xFF) ^ TwoFish_b0(k2);
 			b1 = (TwoFish_P[TwoFish_P_13][b1] & 0xFF) ^ TwoFish_b1(k2);
 			b2 = (TwoFish_P[TwoFish_P_23][b2] & 0xFF) ^ TwoFish_b2(k2);
 			b3 = (TwoFish_P[TwoFish_P_33][b3] & 0xFF) ^ TwoFish_b3(k2);
+			BY2_FALLTHROUGH;
 		case 2:	/* 128-bit keys (optimize for this case) */
 			result =
 				  TwoFish_MDS[0][(TwoFish_P[TwoFish_P_01][(TwoFish_P[TwoFish_P_02][b0] & 0xFF) ^ TwoFish_b0(k1)] & 0xFF) ^ TwoFish_b0(k0)] ^

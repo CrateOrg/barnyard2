@@ -808,7 +808,7 @@ void SetUidGid(int user_id, int group_id)
 
             if ((getuid() == 0) && (initgroups(username, group_id) < 0))
             {
-                free(username);
+                /* do not free username first -- FatalError still reads it */
                 FatalError("Can not initgroups(%s,%d)",
                            username, group_id);
             }
@@ -1088,7 +1088,6 @@ void GoDaemon(void)
 {
 #ifndef WIN32
     int exit_val = 0;
-    int ret = 0;
     pid_t fs;
     
     LogMessage("Initializing daemon mode\n");
@@ -1185,8 +1184,13 @@ void GoDaemon(void)
     (void)open("/dev/null", O_RDWR);  /* stdin, fd 0 */
 #endif
 
-    ret = dup(0);  /* stdout, fd 0 => fd 1 */
-    ret = dup(0);  /* stderr, fd 0 => fd 2 */
+    if (dup(0) == -1)  /* stdout, fd 0 => fd 1 */
+        LogMessage("WARNING: could not redirect stdout to /dev/null: %s\n",
+                   strerror(errno));
+
+    if (dup(0) == -1)  /* stderr, fd 0 => fd 2 */
+        LogMessage("WARNING: could not redirect stderr to /dev/null: %s\n",
+                   strerror(errno));
 
     SignalWaitingParent();
 #endif /* ! WIN32 */
@@ -1775,50 +1779,110 @@ int String2ULong(char *string, unsigned long *result)
     return 0;
 }
 
+/* Copy a file's contents; used by Move() when source and destination sit on
+   different filesystems.  Replaces the previous system("mv ...") call, which
+   passed unquoted paths through a shell. */
+static int CopyFile(const char *source, const char *dest)
+{
+    int     src_fd, dst_fd;
+    char    buf[8192];
+    ssize_t nread;
+    int     rval = 0;
+
+    if((src_fd = open(source, O_RDONLY)) == -1)
+        return -1;
+
+    if((dst_fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0600)) == -1)
+    {
+        close(src_fd);
+        return -1;
+    }
+
+    while((nread = read(src_fd, buf, sizeof(buf))) > 0)
+    {
+        ssize_t off = 0;
+
+        while(off < nread)
+        {
+            ssize_t nwritten = write(dst_fd, buf + off, nread - off);
+
+            if(nwritten <= 0)
+            {
+                if(errno == EINTR)
+                    continue;
+
+                rval = -1;
+                break;
+            }
+
+            off += nwritten;
+        }
+
+        if(rval != 0)
+            break;
+    }
+
+    if(nread < 0)
+        rval = -1;
+
+    if(close(dst_fd) != 0)
+        rval = -1;
+
+    close(src_fd);
+
+    if(rval != 0)
+        unlink(dest);
+
+    return rval;
+}
+
 int Move(const char *source, const char *dest)
 {
-    if(link(source, dest) != 0)
+    /* rename() handles the same-filesystem case without a temporary link */
+    if(rename(source, dest) == 0)
+        return 0;
+
+    if(errno == EXDEV)
     {
-        if(errno == EXDEV || errno == EPERM)
+        /* different filesystems -- copy the contents across, then unlink */
+        if(CopyFile(source, dest) != 0)
         {
-            /* can't hardlink, do it the hard way */
-            char *command;
-            size_t command_len;
-            command_len = strlen("mv") + 1 + strlen(source) + 1 + strlen(dest);
-            command = (char *)SnortAlloc(command_len + 1);
-            snprintf(command, command_len + 1, "mv %s %s", source, dest);
-            if(system(command) != 0)
-            {
-                LogMessage("Failed to archive file \"%s\" to \"%s\": %s",
-                        source, dest, strerror(errno));
-            }
-            free(command);
+            LogMessage("Failed to archive file \"%s\" to \"%s\": %s\n",
+                    source, dest, strerror(errno));
+            return -1;
         }
-        LogMessage("Failed to archive file \"%s\" to \"%s\": %s",
-                source, dest, strerror(errno));
+
+        if(unlink(source) != 0)
+        {
+            LogMessage("Failed to unlink \"%s\": %s\n",
+                    source, strerror(errno));
+            return -1;
+        }
+
+        return 0;
     }
-    else
-    {
-        if (unlink(source) != 0) { /* oops, unlink/remove has failed */
-		LogMessage("Failed to unlink \"%s\": %s",
-			source, strerror(errno));
-	}
-    }
-    return 0;
+
+    LogMessage("Failed to archive file \"%s\" to \"%s\": %s\n",
+            source, dest, strerror(errno));
+    return -1;
 }
 
 int ArchiveFile(const char *filepath, const char *archive_dir)
 {
     char *dest;
+    const char *file_name;
     size_t dest_len;
     if(!filepath || !archive_dir)
         return -1;  /* Invalid argument */
 
+    /* strrchr() returns NULL when filepath carries no directory component */
+    file_name = strrchr(filepath, '/');
+    file_name = (file_name != NULL) ? file_name + 1 : filepath;
+
     /* Archive the file */
-    dest_len = strlen(archive_dir) + 1 + strlen(strrchr(filepath, '/') + 1);
+    dest_len = strlen(archive_dir) + 1 + strlen(file_name);
     dest = (char *)SnortAlloc(dest_len + 1);
-    snprintf(dest, dest_len + 1, "%s/%s", archive_dir, 
-            strrchr(filepath, '/') + 1);
+    snprintf(dest, dest_len + 1, "%s/%s", archive_dir, file_name);
 
     Move(filepath, dest);
     free(dest);
@@ -2715,8 +2779,9 @@ u_int32_t string_sanitize_character(char *input,char ichar)
 	    return 1;
         }
 
-	memcpy(cindex,cindex+1,strlen((cindex)));
-	cindex[end_len] = '\0';
+	/* source and destination overlap, so this must not be memcpy() */
+	memmove(cindex, cindex + 1, end_len);
+	cindex[end_len - 1] = '\0';
 	cindex = NULL;
     }
 
@@ -2734,9 +2799,13 @@ int BY2Strtoul(char *inStr,unsigned long *ul_ptr)
         return 1;
     }
     
+    /* errno is only meaningful if it is cleared first; strtoul() reports
+       overflow as ULONG_MAX, never LONG_MAX/LONG_MIN, so the original test
+       could not detect it. */
+    errno = 0;
     *ul_ptr = strtoul(inStr,&endptr,10);
     
-    if ((errno == ERANGE && ( *ul_ptr == LONG_MAX || *ul_ptr == LONG_MIN)) ||
+    if ((errno == ERANGE && *ul_ptr == ULONG_MAX) ||
         (errno != 0 && *ul_ptr == 0))
     {
         FatalError("[%s()], strtoul error : [%s] for [%s]\n",

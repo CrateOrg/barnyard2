@@ -107,7 +107,11 @@ void MasterCacheFlush(DatabaseData *data,u_int32_t flushFlag);
 /* Destructor */
 
 /* Return largest string lenght */
-inline u_int32_t glsl(char *a,char *b)
+/* Must be "static inline": a bare "inline" definition is not an external
+   definition in C99/C11, so any call the compiler chose not to inline was
+   left unresolved at link time.  The build only ever succeeded because -O2
+   happened to inline all of them; -O0 (i.e. any debug build) failed to link. */
+static inline u_int32_t glsl(char *a,char *b)
 {
     u_int32_t alen = 0;
     u_int32_t blen = 0;
@@ -5298,7 +5302,7 @@ u_int32_t SignatureReferenceCacheUpdateDBid(dbSignatureReferenceObj *iDBList,
 	{
 	    sigSeq = cacheLookup->obj.db_sig_id;
 	    databasemaxSeq = 0;
-	    memset(sigRefArr,'\0',MAX_REF_OBJ);
+	    memset(sigRefArr,'\0',sizeof(sigRefArr));
 	}
 	
 	if(dbSignatureReferenceLookup(&cacheLookup->obj,tempCache,&rNode,1))
@@ -5307,7 +5311,7 @@ u_int32_t SignatureReferenceCacheUpdateDBid(dbSignatureReferenceObj *iDBList,
 	    {
 		cacheLookup->obj.ref_seq = rNode->obj.ref_seq;
 		
-		if(cacheLookup->obj.ref_seq > MAX_REF_OBJ)
+		if(cacheLookup->obj.ref_seq >= MAX_REF_OBJ)
 		{
 		    FatalError("[%s()], can't process reference_sequence of [%d] for signature [%d] reference [%d] \n",
 			       __FUNCTION__,
@@ -5339,7 +5343,7 @@ u_int32_t SignatureReferenceCacheUpdateDBid(dbSignatureReferenceObj *iDBList,
 
 		    cacheLookup->obj.ref_seq = cCheck->obj.ref_seq;
 
-		    if(cacheLookup->obj.ref_seq > MAX_REF_OBJ)
+		    if(cacheLookup->obj.ref_seq >= MAX_REF_OBJ)
 		    {
 			FatalError("[%s()], can't process reference_sequence of [%d] for signature [%d] reference [%d] \n",
 				   __FUNCTION__,
@@ -5364,11 +5368,22 @@ u_int32_t SignatureReferenceCacheUpdateDBid(dbSignatureReferenceObj *iDBList,
 	    
 	    if(!sigRefFound)
 	    {
+		/* ref_seq comes straight out of the database; bound it before
+		   it is used to index sigRefArr[] */
+		if(cacheLookup->obj.ref_seq >= MAX_REF_OBJ)
+		{
+		    FatalError("[%s()], can't process reference_sequence of [%d] for signature [%d] reference [%d] \n",
+			       __FUNCTION__,
+			       cacheLookup->obj.ref_seq,
+			       cacheLookup->obj.db_sig_id,
+			       cacheLookup->obj.db_ref_id);
+		}
+
 		if(sigRefArr[cacheLookup->obj.ref_seq])
 		{
 		    cacheLookup->obj.ref_seq = (databasemaxSeq + 1);
 		    
-		    if(cacheLookup->obj.ref_seq > MAX_REF_OBJ)
+		    if(cacheLookup->obj.ref_seq >= MAX_REF_OBJ)
 		    {
 			FatalError("[%s()], can't process reference_sequence of [%d] for signature [%d] reference [%d] \n",
 				   __FUNCTION__,
@@ -5383,7 +5398,7 @@ u_int32_t SignatureReferenceCacheUpdateDBid(dbSignatureReferenceObj *iDBList,
 		}
 		else
 		{
-		    if(cacheLookup->obj.ref_seq > MAX_REF_OBJ)
+		    if(cacheLookup->obj.ref_seq >= MAX_REF_OBJ)
                     {
                         FatalError("[%s()], can't process reference_sequence of [%d] for signature [%d] reference [%d] \n",
                                    __FUNCTION__,

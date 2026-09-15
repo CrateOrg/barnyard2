@@ -174,6 +174,16 @@ int Unified2ReadRecord(void *sph)
     DEBUG_WRAP(DebugMessage(DEBUG_LOG,"Reading record type=%u (%u bytes)\n",
                 record_type, record_length););
 
+    /* The length is read straight off disk.  A truncated or corrupt spool
+       file (snort killed mid-write, for example) can put anything here, so
+       reject implausible values instead of trying to allocate them. */
+    if (record_length == 0 || record_length > UNIFIED2_MAX_RECORD_LEN)
+    {
+        LogMessage("ERROR: Invalid unified2 record length %u (type %u) in '%s'\n",
+                   record_length, record_type, spooler->filepath);
+        return BARNYARD2_FILE_ERROR;
+    }
+
     if(!spooler->record.data)
     {
         /* SnortAlloc will FatalError if memory can't be assigned */

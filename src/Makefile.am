@@ -5,6 +5,7 @@ bin_PROGRAMS = barnyard2
 
 barnyard2_SOURCES = barnyard2.c barnyard2.h \
 bounds.h \
+daq_compat.h \
 checksum.h \
 debug.c debug.h \
 decode.c decode.h \

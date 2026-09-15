@@ -1,0 +1,14 @@
+barnyard2 (2.1.15-1) unstable; urgency=medium
+
+  * New upstream version 2.1.15 (local). See RELEASE.NOTES for the full list.
+  * Drop the hard libdaq build dependency; libdaq is no longer packaged.
+    The DAQ_PktHdr_t type and the extra DLT_* values are now provided by
+    the bundled src/daq_compat.h when the system headers are absent.
+  * Detect libdnet/libdumbnet in configure instead of assuming <dnet.h>.
+  * Replace obsolete autoconf macros so the tree bootstraps with
+    autoconf 2.72 and automake 1.17.
+  * Build clean with GCC 14 at -Wall.
+  * Memory-safety and correctness fixes in the spooler, the database
+    signature cache and the PostgreSQL escaping path.
+
+ -- Local Build <root@localhost>  Tue, 15 Sep 2026 19:00:02 +0200

@@ -253,15 +253,15 @@ char ** mSplit(const char *str, const char *sep_chars, const int max_toks,
             {
                 *num_toks = cur_tok;
 
-                if (toks != toks_alloc)
-                {
-                    retstr = (char **)SnortAlloc(sizeof(char *) * cur_tok);
-                    memcpy(retstr, toks, (sizeof(char *) * cur_tok));
-                }
-                else
-                {
-                    retstr = toks;
-                }
+                /* Always hand back a fresh heap array.  Returning "toks"
+                 * directly was only safe while it pointed at toks_alloc, an
+                 * invariant the compiler cannot see -- and it is the on-stack
+                 * toks_buf otherwise. */
+                retstr = (char **)SnortAlloc(sizeof(char *) * cur_tok);
+                memcpy(retstr, toks, (sizeof(char *) * cur_tok));
+
+                if (toks_alloc != NULL)
+                    free(toks_alloc);
 
                 return retstr;
             }
@@ -297,16 +297,13 @@ char ** mSplit(const char *str, const char *sep_chars, const int max_toks,
                 /* Return rest of string as last tok */
                 *num_toks = cur_tok + 1;
 
-                /* Already got a ret string */
-                if (toks != toks_alloc)
-                {
-                    retstr = (char **)SnortAlloc(sizeof(char *) * (cur_tok + 1));
-                    memcpy(retstr, toks, (sizeof(char *) * (cur_tok + 1)));
-                }
-                else
-                {
-                    retstr = toks;
-                }
+                /* Copy only the cur_tok entries that are initialised; the
+                 * last slot is filled in below. */
+                retstr = (char **)SnortAlloc(sizeof(char *) * (cur_tok + 1));
+                memcpy(retstr, toks, (sizeof(char *) * cur_tok));
+
+                if (toks_alloc != NULL)
+                    free(toks_alloc);
 
                 /* Trim whitespace at end of last tok */
                 for (j = strlen(str); j > tok_start; j--)
@@ -355,15 +352,11 @@ char ** mSplit(const char *str, const char *sep_chars, const int max_toks,
 
     /* Last character was not a separator character so we've got
      * one more tok.  Unescape escaped sepatator charactors */
-    if (toks != toks_alloc)
-    {
-        retstr = (char **)SnortAlloc(sizeof(char *) * (cur_tok + 1));
-        memcpy(retstr, toks, (sizeof(char *) * (cur_tok + 1)));
-    }
-    else
-    {
-        retstr = toks;
-    }
+    retstr = (char **)SnortAlloc(sizeof(char *) * (cur_tok + 1));
+    memcpy(retstr, toks, (sizeof(char *) * cur_tok));
+
+    if (toks_alloc != NULL)
+        free(toks_alloc);
 
     retstr[cur_tok] = mSplitAddTok(&str[tok_start], j - tok_start, sep_chars, meta_char);
 

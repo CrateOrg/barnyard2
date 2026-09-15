@@ -58,6 +58,12 @@
 
 #define MAX_FILEPATH_BUF    1024
 
+/* Upper bound on a single unified2 record.  The largest legitimate record is
+   a packet record holding a jumbo frame, which stays well under this; the cap
+   exists so that a corrupt or truncated spool file cannot drive a multi-
+   gigabyte allocation. */
+#define UNIFIED2_MAX_RECORD_LEN     (1024 * 1024)
+
 typedef struct _Record
 {
     /* raw data */

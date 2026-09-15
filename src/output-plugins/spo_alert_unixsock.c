@@ -188,6 +188,7 @@ SpoAlertUnixSockData *ParseAlertUnixSockArgs(char *args)
                     continue;
                 }
                 /* Otherwise fall through to error */
+                BY2_FALLTHROUGH;
             case 2:
                 FatalError("alert_unixsock: error in %s(%i): %s\n",
                     file_name, file_line, tok);
@@ -245,15 +246,19 @@ void AlertUnixSock(Packet *p, void *event, uint32_t event_type, void *arg)
 
     if(p && p->pkt)
     {
-	/* bcopy() deprecated, replaced by memmove() */
-	memmove((void *) &alertpkt.pkth, (const void *)p->pkth, sizeof(struct pcap_pkthdr));
+	/* p->pkth is a DAQ_PktHdr_t; convert rather than copying the prefix
+	   and hoping the two layouts agree. */
+	alertpkt.pkth.ts     = p->pkth->ts;
+	alertpkt.pkth.caplen = p->pkth->caplen;
+	alertpkt.pkth.len    = p->pkth->pktlen;
+
 	memmove(alertpkt.pkt, (const void *)p->pkt,
 		 alertpkt.pkth.caplen > PKT_SNAPLEN ? PKT_SNAPLEN : alertpkt.pkth.caplen);
     }
     else
         alertpkt.val|=NOPACKET_STRUCT;
 
-	sn = GetSigByGidSid(ntohl(((Unified2EventCommon *)event)->generator_id),
+    sn = GetSigByGidSid(ntohl(((Unified2EventCommon *)event)->generator_id),
 			    ntohl(((Unified2EventCommon *)event)->signature_id),
 			    ntohl(((Unified2EventCommon *)event)->signature_revision));
 
@@ -358,8 +363,13 @@ void OpenAlertSock(SpoAlertUnixSockData *data)
 
     memset((char *) &alertaddr, 0, sizeof(alertaddr)); /* bzero() deprecated, replaced with memset() */
     
-    /* 108 is the size of sun_path */
-    strncpy(alertaddr.sun_path, data->filename, 108);
+    if (strlen(data->filename) >= sizeof(alertaddr.sun_path))
+    {
+        FatalError("alert_unixsock: socket path '%s' exceeds %zu bytes\n",
+                   data->filename, sizeof(alertaddr.sun_path) - 1);
+    }
+
+    SnortStrncpy(alertaddr.sun_path, data->filename, sizeof(alertaddr.sun_path));
 
     alertaddr.sun_family = AF_UNIX;
 

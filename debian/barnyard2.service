@@ -1,0 +1,33 @@
+[Unit]
+Description=Barnyard2 unified2 spooler
+Documentation=man:barnyard2(8)
+After=network-online.target mysql.service mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/default/barnyard2
+ExecStart=/usr/bin/barnyard2 -c $BARNYARD2_CONF -d $SNORT_LOG_DIR -f $SNORT_LOG_FILE -w $WALDO_FILE -u $RUN_AS_USER -g $RUN_AS_GROUP $EXTRA_ARGS
+Restart=on-failure
+RestartSec=5
+
+# barnyard2 only ever reads spool files and talks to a database.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+ReadWritePaths=/var/log/barnyard2 /var/lib/barnyard2
+ReadOnlyPaths=/etc/barnyard2
+
+[Install]
+WantedBy=multi-user.target

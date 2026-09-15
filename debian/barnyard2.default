@@ -1,0 +1,21 @@
+# Defaults for barnyard2, read by the systemd unit.
+
+# Main configuration file.
+BARNYARD2_CONF=/etc/barnyard2/barnyard2.conf
+
+# Directory Snort writes its unified2 files into, and the file prefix
+# configured there (snort.conf "output unified2: filename <prefix>", or in
+# Snort 3 the alert_unified2/unified2 module's "file" setting).
+SNORT_LOG_DIR=/var/log/snort
+SNORT_LOG_FILE=snort.log
+
+# Bookmark recording how far into the spool barnyard2 has processed.
+WALDO_FILE=/var/lib/barnyard2/barnyard2.waldo
+
+# Drop privileges to this user/group after startup.
+RUN_AS_USER=barnyard2
+RUN_AS_GROUP=barnyard2
+
+# Anything else to pass on the command line, e.g. -a to archive processed
+# spool files, or -q to quieten startup output.
+EXTRA_ARGS=

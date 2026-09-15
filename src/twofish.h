@@ -37,6 +37,8 @@
 
 #include <stdint.h>
 
+#include "sf_types.h"
+
 #ifndef FALSE
 #define FALSE   0
 #endif
